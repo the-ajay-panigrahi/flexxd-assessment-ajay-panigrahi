@@ -81,8 +81,9 @@ test('retrieves current credits and all the user bookings, excluding other users
 });
 
 test('redeems a booking once, records the timestamp, and preserves credits and capacity', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-21T17:59:00Z') });
   const created = await book();
-  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-21T18:00:00Z') });
+  t.mock.timers.setTime(new Date('2026-11-21T18:00:00Z').getTime());
   const response = await redeem(created.body.redemptionCode);
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, {
@@ -181,7 +182,7 @@ test('rejects repeated redemption without mutation', async () => {
   assert.deepEqual(store, before);
 });
 
-test('counts capacity by UTC date and allows redemption after midnight without expiry', async (t) => {
+test('counts capacity by UTC date and allows unexpired redemption after midnight', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-21T23:59:59.999Z') });
   const first = await book();
   assert.equal((await book()).status, 201);
@@ -194,18 +195,21 @@ test('counts capacity by UTC date and allows redemption after midnight without e
   assert.equal(nextDay.status, 201);
   assert.equal(nextDay.body.bookingDate, '2026-11-22');
 
-  t.mock.timers.setTime(new Date('2026-11-22T12:00:00Z').getTime());
+  t.mock.timers.setTime(new Date('2026-11-22T00:05:00Z').getTime());
   const response = await redeem(first.body.redemptionCode);
   assert.equal(response.status, 200);
   assert.equal(response.body.bookingDate, '2026-11-21');
-  assert.equal(response.body.redeemedAt, '2026-11-22T12:00:00.000Z');
+  assert.equal(response.body.redeemedAt, '2026-11-22T00:05:00.000Z');
   assert.equal(store.users[0].visitCredits, 0);
 });
 
-for (const redeemed of [false, true]) {
-  test(`regenerates a code colliding with a retained booking (redeemed=${redeemed})`, async (t) => {
+for (const state of ['unredeemed', 'redeemed', 'expired']) {
+  test(`regenerates a code colliding with a retained ${state} booking`, async (t) => {
+    const createdAt = new Date('2026-11-21T12:00:00Z').getTime();
+    t.mock.timers.enable({ apis: ['Date'], now: createdAt });
     const existing = await book();
-    if (redeemed) await redeem(existing.body.redemptionCode);
+    if (state === 'redeemed') await redeem(existing.body.redemptionCode);
+    if (state === 'expired') t.mock.timers.setTime(createdAt + 600_000);
     const replacementCode = crypto.randomUUID();
     const bookingId = crypto.randomUUID();
     const generated = [existing.body.redemptionCode, replacementCode, bookingId];
@@ -218,6 +222,67 @@ for (const redeemed of [false, true]) {
     assert.equal(store.bookings[0].redemptionCode, existing.body.redemptionCode);
   });
 }
+
+test('redeems an unexpired code one millisecond before its ten-minute deadline', async (t) => {
+  const createdAt = new Date('2026-11-21T12:00:00Z').getTime();
+  t.mock.timers.enable({ apis: ['Date'], now: createdAt });
+  const created = await book();
+  t.mock.timers.setTime(createdAt + 599_999);
+
+  const response = await redeem(created.body.redemptionCode);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.redeemed, true);
+  assert.equal(response.body.redeemedAt, '2026-11-21T12:09:59.999Z');
+  assert.equal(store.users[0].visitCredits, 2);
+});
+
+for (const elapsed of [600_000, 600_001]) {
+  test(`rejects expiry at ${elapsed} ms after creation without changing state`, async (t) => {
+    const createdAt = new Date('2026-11-21T12:00:00Z').getTime();
+    t.mock.timers.enable({ apis: ['Date'], now: createdAt });
+    const created = await book();
+    t.mock.timers.setTime(createdAt + elapsed);
+    const before = structuredClone(store);
+
+    assertError(await redeem(created.body.redemptionCode), 409, 'CODE_EXPIRED');
+    assert.deepEqual(store, before);
+    const user = await request(app).get('/users/user-1');
+    assert.equal(user.status, 200);
+    assert.equal(user.body.visitCredits, 2);
+    assert.deepEqual(user.body.bookings, [created.body]);
+  });
+}
+
+test('a redeemed booking stays redeemed after its deadline', async (t) => {
+  const createdAt = new Date('2026-11-21T12:00:00Z').getTime();
+  t.mock.timers.enable({ apis: ['Date'], now: createdAt });
+  const created = await book();
+  assert.equal((await redeem(created.body.redemptionCode)).status, 200);
+  const before = structuredClone(store);
+  t.mock.timers.setTime(createdAt + 600_000);
+
+  assertError(await redeem(created.body.redemptionCode), 409, 'ALREADY_REDEEMED');
+  assert.deepEqual(store, before);
+  const user = await request(app).get('/users/user-1');
+  assert.equal(user.body.bookings[0].redeemed, true);
+  assert.equal(user.body.bookings[0].redeemedAt, '2026-11-21T12:00:00.000Z');
+});
+
+test('expired bookings do not refund credits or release daily capacity', async (t) => {
+  const createdAt = new Date('2026-11-21T12:00:00Z').getTime();
+  t.mock.timers.enable({ apis: ['Date'], now: createdAt });
+  const first = await book();
+  const second = await book();
+  t.mock.timers.setTime(createdAt + 600_001);
+  const before = structuredClone(store);
+
+  assertError(await redeem(first.body.redemptionCode), 409, 'CODE_EXPIRED');
+  assertError(await redeem(second.body.redemptionCode), 409, 'CODE_EXPIRED');
+  assertError(await book(), 409, 'CAPACITY_FULL');
+  assert.deepEqual(store, before);
+  assert.equal(store.users[0].visitCredits, 1);
+  assert.equal(store.bookings.length, 2);
+});
 
 test('a fresh app restores seeds and has no bookings', async () => {
   await book();

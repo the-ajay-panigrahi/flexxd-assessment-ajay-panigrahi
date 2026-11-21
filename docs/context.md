@@ -58,13 +58,15 @@ The creation route is plural: `/bookings`, not `/booking`.
 - Check repeated bookings, capacity remaining consumed after redemption, UTC date accounting, redemption after midnight in MVP 1, and code regeneration on collision.
 - Demonstrate all three endpoints in Postman and verify the returned data. Complete MVP 1 checks before considering optional expiry.
 
-## Optional MVP 2
+## MVP 2 (implemented after MVP 1 verification)
 
-- Only after MVP 1 is complete and verified, consider adding a ten-minute expiry measured from booking creation.
+- MVP 1 is complete and verified. MVP 2 adds a ten-minute expiry measured from booking creation.
 - Reject an unredeemed code at or after its expiry with `409` and a clear expiry error code and message.
+- Derive the deadline from `createdAt` plus 600,000 milliseconds. No additional stored expiry field or status is needed; an expired unredeemed booking remains `redeemed: false`.
+- Check whether a booking is already redeemed before checking expiry. Redeemed bookings retain their status and timestamp and return `ALREADY_REDEEMED` on any further redemption attempt.
 - Retain expired bookings and their codes. Expiry does not refund credits or release reserved capacity for the booking date.
 - Validate expiry when redemption is requested; no scheduled cleanup or background jobs are needed.
-- Add expiry boundary tests and repeat the relevant integration and Postman checks.
+- Use a controllable clock to test just before, exactly at, and after the deadline, without waiting ten minutes. Repeat core integration and Postman checks.
 
 ## Exclusions and assessment walkthrough
 

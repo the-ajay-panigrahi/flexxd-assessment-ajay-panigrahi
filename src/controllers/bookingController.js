@@ -1,6 +1,6 @@
 const crypto = require('node:crypto');
 const { sendError } = require('../utils/http');
-const { HTTP_STATUS, ERROR_CODES } = require('../utils/constants');
+const { HTTP_STATUS, ERROR_CODES, REDEMPTION_TTL_MS } = require('../utils/constants');
 const { isNonEmptyString } = require('../utils/validation');
 
 function createBookingController(store) {
@@ -68,7 +68,12 @@ function createBookingController(store) {
       return sendError(res, HTTP_STATUS.CONFLICT, ERROR_CODES.ALREADY_REDEEMED, 'Booking has already been redeemed.');
     }
 
-    booking.redeemedAt = new Date().toISOString();
+    const redeemedAt = new Date();
+    if (redeemedAt.getTime() >= Date.parse(booking.createdAt) + REDEMPTION_TTL_MS) {
+      return sendError(res, HTTP_STATUS.CONFLICT, ERROR_CODES.CODE_EXPIRED, 'Redemption code has expired.');
+    }
+
+    booking.redeemedAt = redeemedAt.toISOString();
     booking.redeemed = true;
     return res.status(HTTP_STATUS.OK).json(booking);
   }

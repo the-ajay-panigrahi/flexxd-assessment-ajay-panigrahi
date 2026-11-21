@@ -1,0 +1,291 @@
+{
+  "info": {
+    "name": "Flexxd Booking API - MVP 2",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Use a fresh API. Run requests 1-4 in order, then run 5-7 at or after request 4 creation plus ten minutes. Request 5 may be repeated after the deadline. Integration tests use a controlled clock without waiting."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "redemptionCode",
+      "value": ""
+    },
+    {
+      "key": "bookingId",
+      "value": ""
+    },
+    {
+      "key": "expiryCode",
+      "value": ""
+    },
+    {
+      "key": "expiryBooking",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"user-1\",\n  \"venueId\": \"venue-1\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Booking created with status 201', () => pm.response.to.have.status(201));",
+              "const booking = pm.response.json();",
+              "pm.test('Booking links the requested user and venue', () => {",
+              "  pm.expect(booking.userId).to.eql('user-1');",
+              "  pm.expect(booking.venueId).to.eql('venue-1');",
+              "  pm.expect(booking.redeemed).to.eql(false);",
+              "});",
+              "pm.test('Booking includes redemption code and UTC creation date', () => {",
+              "  pm.expect(booking.redemptionCode).to.be.a('string').and.not.empty;",
+              "  pm.expect(booking.bookingDate).to.eql(booking.createdAt.slice(0, 10));",
+              "  pm.expect(booking.redeemedAt).to.eql(null);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('redemptionCode', booking.redemptionCode);",
+              "  pm.collectionVariables.set('bookingId', booking.id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Redeem booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings/redeem",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"redemptionCode\": \"{{redemptionCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Redemption succeeds with status 200', () => pm.response.to.have.status(200));",
+              "const booking = pm.response.json();",
+              "pm.test('The created booking is redeemed', () => {",
+              "  pm.expect(booking.id).to.eql(pm.collectionVariables.get('bookingId'));",
+              "  pm.expect(booking.redemptionCode).to.eql(pm.collectionVariables.get('redemptionCode'));",
+              "  pm.expect(booking.redeemed).to.eql(true);",
+              "});",
+              "pm.test('Redemption timestamp is recorded', () => {",
+              "  pm.expect(booking.redeemedAt).to.be.a('string');",
+              "  pm.expect(Number.isNaN(Date.parse(booking.redeemedAt))).to.eql(false);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Get user and bookings",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/users/user-1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('User retrieval succeeds with status 200', () => pm.response.to.have.status(200));",
+              "const user = pm.response.json();",
+              "pm.test('Exactly one credit was deducted', () => {",
+              "  pm.expect(user.id).to.eql('user-1');",
+              "  pm.expect(user.visitCredits).to.eql(2);",
+              "});",
+              "pm.test('The user has the redeemed booking', () => {",
+              "  pm.expect(user.bookings).to.have.lengthOf(1);",
+              "  pm.expect(user.bookings[0].id).to.eql(pm.collectionVariables.get('bookingId'));",
+              "  pm.expect(user.bookings[0].redeemed).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Create booking for expiry",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"user-2\",\n  \"venueId\": \"venue-2\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Expiry booking created', () => pm.response.to.have.status(201));",
+              "const booking = pm.response.json();",
+              "pm.test('New booking is unredeemed', () => {",
+              "  pm.expect(booking.userId).to.eql('user-2');",
+              "  pm.expect(booking.redeemed).to.eql(false);",
+              "  pm.expect(booking.redeemedAt).to.eql(null);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('expiryCode', booking.redemptionCode);",
+              "  pm.collectionVariables.set('expiryBooking', JSON.stringify(booking));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Reject expired code",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings/redeem",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"redemptionCode\": \"{{expiryCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Expired code is rejected with 409', () => pm.response.to.have.status(409));",
+              "pm.test('Error identifies expiry', () => {",
+              "  pm.expect(pm.response.json().error.code).to.eql('CODE_EXPIRED');",
+              "  pm.expect(pm.response.json().error.message).to.eql('Redemption code has expired.');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Verify expired booking retained",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/users/user-2"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('User retrieval succeeds', () => pm.response.to.have.status(200));",
+              "pm.test('Expiry leaves booking and spent credit unchanged', () => {",
+              "  const user = pm.response.json();",
+              "  pm.expect(user.visitCredits).to.eql(0);",
+              "  pm.expect(user.bookings).to.eql([JSON.parse(pm.collectionVariables.get('expiryBooking'))]);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Keep redeemed booking redeemed",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings/redeem",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"redemptionCode\": \"{{redemptionCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Repeated redemption is rejected with 409', () => pm.response.to.have.status(409));",
+              "pm.test('Redeemed booking is not reported as expired', () => {",
+              "  pm.expect(pm.response.json().error.code).to.eql('ALREADY_REDEEMED');",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

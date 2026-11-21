@@ -1,6 +1,6 @@
 # flexxd-assessment-ajay-panigrahi
 
-MVP 1 booking API using Node.js, Express, and in-memory arrays. Requires Node.js 24 or newer for the included tests.
+MVP 1 and MVP 2 booking API using Node.js, Express, and in-memory arrays. Requires Node.js 24 or newer for the included tests.
 
 ## Run
 
@@ -40,7 +40,15 @@ Import `postman/booking-api-mvp1.postman_collection.json` into Postman. Start th
 
 For POST requests select Body > raw > JSON. Errors use `{"error":{"code":"...","message":"..."}}`.
 
-Bookings use the server's UTC date and cost one credit. Accepted bookings consume daily venue capacity even after redemption. Code expiry is reserved for optional MVP 2 and is not implemented.
+Bookings use the server's UTC date and cost one credit. Accepted bookings consume daily venue capacity even after redemption or code expiry.
+
+## MVP 2 expiry
+
+Unredeemed codes expire ten minutes after `createdAt`. Redemption at or after that deadline returns `409` with `error.code: CODE_EXPIRED`. Redeemed bookings stay redeemed; repeated redemption returns `ALREADY_REDEEMED` even after the deadline. Expiry does not change stored bookings, refund credits, or release daily capacity. There are no background jobs.
+
+The tests control Node.js's clock to check one millisecond before, exactly at, and one millisecond after expiry. Run them together with the core tests using `npm test`.
+
+Import `postman/booking-api-mvp2.postman_collection.json` for the core requests and expiry checks. Run requests 1 through 4 against a freshly started API. Request 5 expects request 4's code to have reached its ten-minute deadline; requests 6 and 7 then check that the expired booking is retained and the earlier redeemed booking stays redeemed. Request 5 can be repeated after the deadline. The API exposes no clock-control endpoint; automated boundary verification is in the integration tests.
 
 See [the implementation context](docs/context.md) and [assumptions](docs/assumptions.md) for the agreed scope.
 
