@@ -1,0 +1,143 @@
+{
+  "info": {
+    "name": "Flexxd Booking API - MVP 1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Start the API with fresh seed data, then run these three requests in order. Restart the API before repeating the collection."
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "redemptionCode",
+      "value": ""
+    },
+    {
+      "key": "bookingId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Create booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": \"user-1\",\n  \"venueId\": \"venue-1\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Booking created with status 201', () => pm.response.to.have.status(201));",
+              "const booking = pm.response.json();",
+              "pm.test('Booking links the requested user and venue', () => {",
+              "  pm.expect(booking.userId).to.eql('user-1');",
+              "  pm.expect(booking.venueId).to.eql('venue-1');",
+              "  pm.expect(booking.redeemed).to.eql(false);",
+              "});",
+              "pm.test('Booking includes redemption code and UTC creation date', () => {",
+              "  pm.expect(booking.redemptionCode).to.be.a('string').and.not.empty;",
+              "  pm.expect(booking.bookingDate).to.eql(booking.createdAt.slice(0, 10));",
+              "  pm.expect(booking.redeemedAt).to.eql(null);",
+              "});",
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('redemptionCode', booking.redemptionCode);",
+              "  pm.collectionVariables.set('bookingId', booking.id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Redeem booking",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/bookings/redeem",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"redemptionCode\": \"{{redemptionCode}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Redemption succeeds with status 200', () => pm.response.to.have.status(200));",
+              "const booking = pm.response.json();",
+              "pm.test('The created booking is redeemed', () => {",
+              "  pm.expect(booking.id).to.eql(pm.collectionVariables.get('bookingId'));",
+              "  pm.expect(booking.redemptionCode).to.eql(pm.collectionVariables.get('redemptionCode'));",
+              "  pm.expect(booking.redeemed).to.eql(true);",
+              "});",
+              "pm.test('Redemption timestamp is recorded', () => {",
+              "  pm.expect(booking.redeemedAt).to.be.a('string');",
+              "  pm.expect(Number.isNaN(Date.parse(booking.redeemedAt))).to.eql(false);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Get user and bookings",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/users/user-1"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('User retrieval succeeds with status 200', () => pm.response.to.have.status(200));",
+              "const user = pm.response.json();",
+              "pm.test('Exactly one credit was deducted', () => {",
+              "  pm.expect(user.id).to.eql('user-1');",
+              "  pm.expect(user.visitCredits).to.eql(2);",
+              "});",
+              "pm.test('The user has the redeemed booking', () => {",
+              "  pm.expect(user.bookings).to.have.lengthOf(1);",
+              "  pm.expect(user.bookings[0].id).to.eql(pm.collectionVariables.get('bookingId'));",
+              "  pm.expect(user.bookings[0].redeemed).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

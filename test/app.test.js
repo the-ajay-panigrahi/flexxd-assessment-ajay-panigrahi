@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const request = require('supertest');
 const { createApp } = require('../src/app');
-const { createStore } = require('../src/store');
+const { createStore } = require('../src/models/store');
 
 let store;
 let app;
